@@ -11,8 +11,8 @@
 
 ## Medium priority
 1. Find a host for PiBot
-2. Add personalities
+2. Add personalities [X]
 
 ## Low priority
-1. Connect bot to a small LLM and reduce `phrases.json` influence. Therefore imitate a real human.
+1. Connect bot to a small LLM and reduce `phrases.json` influence. Therefore imitate a real human. [X]
 2. Inline mode maybe?

@@ -3,6 +3,7 @@ import json
 import time
 from pathlib import Path
 
+from openai import AsyncOpenAI
 from telegram import ChatPermissions, MessageEntity, Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import (
@@ -25,7 +26,14 @@ DELETE_BATCH_SIZE = 100
 
 COMMAND_PREFIX = "$"
 
+LLM_KEY_PATH = BASE / "dev" / "llm-key"
+PERSONALITY_PATH = BASE / "dev" / "personality.md"
+
 COMMANDS = {}
+
+llm_client = None
+personality_prompt = ""
+llm_rate_limiters = {}
 
 NO_PERMISSIONS = ChatPermissions(
     can_send_messages=False,
@@ -135,6 +143,27 @@ def user_display(user):
 
 
 rate_limiter = RateLimiter(max_calls=5, period=1.0)
+
+
+def get_llm_rate_limiter(chat_id: int) -> RateLimiter:
+    if chat_id not in llm_rate_limiters:
+        llm_rate_limiters[chat_id] = RateLimiter(max_calls=1, period=1.0)
+    return llm_rate_limiters[chat_id]
+
+
+async def ask_llm(history: list[dict]) -> str:
+    if not personality_prompt:
+        return ""
+    try:
+        response = await llm_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "system", "content": personality_prompt}] + history,
+            max_tokens=300,
+            temperature=0.9,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return ""
 
 
 def track_id(context, chat_id: int, message_id: int):
@@ -397,8 +426,6 @@ async def handle_message(update: Update, context):
 
     lower_text = text.lower()
     phrases = load_phrases()
-    if not phrases:
-        return
 
     if lower_text in phrases:
         if not await rate_limiter.acquire():
@@ -414,6 +441,50 @@ async def handle_message(update: Update, context):
 
         response = response.replace("{mention}", mention)
         await safe_reply(update, context, response, disable_notification=True)
+        return
+
+    if not llm_client:
+        return
+
+    if update.message.from_user.id == context.bot.id:
+        return
+
+    is_mentioned = False
+    if update.effective_chat.type == "private":
+        is_mentioned = True
+    elif update.message.entities:
+        bot_username = context.bot.username
+        for entity in update.message.entities:
+            if entity.type == MessageEntity.MENTION:
+                mention = text[entity.offset : entity.offset + entity.length]
+                if mention.lower() == f"@{bot_username.lower()}":
+                    is_mentioned = True
+                    break
+
+    if not is_mentioned:
+        return
+
+    llm_limiter = get_llm_rate_limiter(update.effective_chat.id)
+    if not await llm_limiter.acquire():
+        return
+
+    chat_history = context.chat_data.setdefault("llm_history", [])
+    history = list(chat_history)
+    clean_text = text
+    if update.message.entities:
+        for entity in sorted(update.message.entities, key=lambda e: e.offset, reverse=True):
+            if entity.type == MessageEntity.MENTION:
+                clean_text = clean_text[:entity.offset] + clean_text[entity.offset + entity.length :]
+    clean_text = clean_text.strip()
+    if not clean_text:
+        return
+
+    history.append({"role": "user", "content": clean_text})
+    response_text = await ask_llm(history[-20:])
+    if response_text:
+        history.append({"role": "assistant", "content": response_text})
+        context.chat_data["llm_history"] = history[-20:]
+        await safe_reply(update, context, response_text, disable_notification=True)
 
 
 async def start(update: Update, context):
@@ -434,10 +505,23 @@ async def post_init(app: Application):
 
 
 def main():
+    global llm_client, personality_prompt
+
     token = TOKEN_PATH.read_text().strip()
     if not token or token == "TOKEN-WILL-BE-HERE-LATER":
         print("Please set your bot token in telegram-token")
         return
+
+    llm_key = LLM_KEY_PATH.read_text().strip()
+    if llm_key and llm_key != "gsk_YOUR_GROQ_API_KEY_HERE":
+        llm_client = AsyncOpenAI(api_key=llm_key, base_url="https://api.groq.com/openai/v1")
+    else:
+        print("LLM key not set — AI chatbot disabled")
+
+    if PERSONALITY_PATH.exists():
+        personality_prompt = PERSONALITY_PATH.read_text().strip()
+    else:
+        print("personality.md not found — AI chatbot disabled")
 
     persistence = PicklePersistence(filepath=Path(__file__).parent / "bot_data.pickle")
     app = (

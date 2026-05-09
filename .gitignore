@@ -10,5 +10,7 @@ __pycache__/
 **/dev/telegram-token
 **/dev/botinfo.md
 **/dev/plan*
+**/dev/llm-key
+**/dev/personality.md
 **/datafiles/phrases.json
 **/datafiles/superusers.json

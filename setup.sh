@@ -13,6 +13,7 @@ cd "$DIR" || exit 1
 cp ./datafiles/public-phrases.json ./datafiles/phrases.json
 cp ./datafiles/public-superusers.json ./datafiles/superusers.json
 cp ./dev/public-botinfo.md ./dev/botinfo.md
+cp ./dev/personality-public.md ./dev/personality.md
 echo "------------------------------------------------"
 sleep 3
 
