@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Persistent bot data
+**/source/bot_data.pickle
+
+# Sensitive config (tokens, IDs, personal content)
+**/dev/telegram-token
+**/dev/plan.md
+**/dev/botinfo.md
+**/datafiles/phrases.json
+**/datafiles/superusers.json

@@ -1,0 +1,6 @@
+{
+    "hello": "Hello {mention}!",
+    "hi": "Hi {mention}!",
+    "привет": "Привет {mention}!",
+    "pibot": "__botinfo__"
+}
