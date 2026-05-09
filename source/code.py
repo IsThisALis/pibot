@@ -246,7 +246,7 @@ async def handle_nuke(update: Update, context, params: str):
     message_ids = context.chat_data.setdefault("message_ids", [])
 
     if not message_ids:
-        await safe_reply(update, context, "Не найдено сообщений")
+        await safe_reply(update, context, "⚠️ Не найдено сообщений")
         return
 
     n = min(n, len(message_ids))
@@ -258,7 +258,7 @@ async def handle_nuke(update: Update, context, params: str):
         try:
             await context.bot.delete_messages(chat_id=chat_id, message_ids=batch)
         except Exception as e:
-            await safe_reply(update, context, f"Ошибка удаления: {e}")
+            await safe_reply(update, context, f"⛔️ Ошибка удаления: {e}")
             break
 
 
@@ -267,20 +267,22 @@ async def handle_kick(update: Update, context, params: str):
     target = await resolve_user(update, context, params)
     if not target:
         await safe_reply(
-            update, context, "Кого кикать? Ответь на сообщение или укажи @username"
+            update,
+            context,
+            "⚠️ Кого вышвырнуть? Ответь на сообщение или укажи @username",
         )
         return
 
     if await target_immune(update, target):
-        await safe_reply(update, context, "Админов кикать нельзя")
+        await safe_reply(update, context, "⛔️ Админов кикать нельзя")
         return
 
     try:
         await context.bot.ban_chat_member(update.effective_chat.id, target.id)
         await context.bot.unban_chat_member(update.effective_chat.id, target.id)
-        await safe_reply(update, context, f"{user_display(target)} выкинут за борт")
+        await safe_reply(update, context, f"✅️ {user_display(target)} выкинут за борт")
     except Exception as e:
-        await safe_reply(update, context, f"Ошибка кика: {e}")
+        await safe_reply(update, context, f"⛔️ Ошибка кика: {e}")
 
 
 @command("ban", superuser_command=True)
@@ -288,21 +290,21 @@ async def handle_ban(update: Update, context, params: str):
     target = await resolve_user(update, context, params)
     if not target:
         await safe_reply(
-            update, context, "Кого банить? Ответь на сообщение или укажи @username"
+            update, context, "⚠️ Кого банить? Ответь на сообщение или укажи @username"
         )
         return
 
     if await target_immune(update, target):
-        await safe_reply(update, context, "Админов банить нельзя")
+        await safe_reply(update, context, "⛔️ Админов банить нельзя")
         return
 
     try:
         await context.bot.ban_chat_member(
             update.effective_chat.id, target.id, revoke_messages=True
         )
-        await safe_reply(update, context, f"{user_display(target)} был забанен")
+        await safe_reply(update, context, f"✅️ {user_display(target)} был забанен")
     except Exception as e:
-        await safe_reply(update, context, f"Ошибка бана: {e}")
+        await safe_reply(update, context, f"⛔️ Ошибка бана: {e}")
 
 
 @command("mute", admin_command=True)
@@ -310,21 +312,21 @@ async def handle_mute(update: Update, context, params: str):
     target = await resolve_user(update, context, params)
     if not target:
         await safe_reply(
-            update, context, "Кого мутить? Ответь на сообщение или укажи @username"
+            update, context, "⚠️ Кого мутить? Ответь на сообщение или укажи @username"
         )
         return
 
     if await target_immune(update, target):
-        await safe_reply(update, context, "Админов мутить нельзя")
+        await safe_reply(update, context, "⛔️ Админов мутить нельзя")
         return
 
     try:
         await context.bot.restrict_chat_member(
             update.effective_chat.id, target.id, permissions=NO_PERMISSIONS
         )
-        await safe_reply(update, context, f"{user_display(target)} не глаголь тут")
+        await safe_reply(update, context, f"✅️ {user_display(target)} не глаголь тут")
     except Exception as e:
-        await safe_reply(update, context, f"Ошибка мута: {e}")
+        await safe_reply(update, context, f"⛔️ Ошибка мута: {e}")
 
 
 @command("unmute", admin_command=True)
@@ -332,23 +334,21 @@ async def handle_unmute(update: Update, context, params: str):
     target = await resolve_user(update, context, params)
     if not target:
         await safe_reply(
-            update, context, "Кого размутить? Ответь на сообщение или укажи @username"
+            update, context, "⚠️ Кого размутить? Ответь на сообщение или укажи @username"
         )
         return
 
     if await target_immune(update, target):
-        await safe_reply(update, context, "Админов размутить нельзя")
+        await safe_reply(update, context, "⛔️ Админов размутить нельзя")
         return
 
     try:
         await context.bot.restrict_chat_member(
             update.effective_chat.id, target.id, permissions=ALL_PERMISSIONS
         )
-        await safe_reply(
-            update, context, f"{user_display(target)} больше не выёживайся"
-        )
+        await safe_reply(update, context, f"✅️ {user_display(target)} больше не буянь")
     except Exception as e:
-        await safe_reply(update, context, f"Ошибка размута: {e}")
+        await safe_reply(update, context, f"⛔️ Ошибка размута: {e}")
 
 
 async def handle_message(update: Update, context):
@@ -379,14 +379,14 @@ async def handle_message(update: Update, context):
             if not is_super:
                 if cmd_config.get("superuser-command"):
                     await safe_reply(
-                        update, context, "Фиг тебе, это только для суперюзеров"
+                        update, context, "⛔️ Фиг тебе, это только для суперюзеров"
                     )
                     return
                 elif cmd_config.get("admin-command") and not await is_admin_cmd(
                     update, context
                 ):
                     await safe_reply(
-                        update, context, "Фиг тебе, это только для админов"
+                        update, context, "⛔️ Фиг тебе, это только для админов"
                     )
                     return
 
@@ -410,23 +410,21 @@ async def handle_message(update: Update, context):
         if response == "__botinfo__":
             response = load_botinfo()
             if not response:
-                response = "Инфа потерялась, проверь путь к моему описанию"
+                response = "⚠️ Инфа потерялась, проверь путь к моему описанию"
 
         response = response.replace("{mention}", mention)
         await safe_reply(update, context, response, disable_notification=True)
 
 
 async def start(update: Update, context):
-    await safe_reply(update, context, "Я вернулся, чат жалких рабов системы")
+    await safe_reply(update, context, "Я в системе 😎")
 
 
 async def startup_notify(context):
     known = context.bot_data.get("known_chats", set())
     for chat_id in known:
         try:
-            await context.bot.send_message(
-                chat_id=chat_id, text="Я вернулся, чат жалких рабов системы"
-            )
+            await context.bot.send_message(chat_id=chat_id, text="Я в системе 😎")
         except Exception:
             pass
 

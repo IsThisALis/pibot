@@ -8,7 +8,7 @@ __pycache__/
 
 # Sensitive config (tokens, IDs, personal content)
 **/dev/telegram-token
-**/dev/plan.md
 **/dev/botinfo.md
+**/dev/plan*
 **/datafiles/phrases.json
 **/datafiles/superusers.json
