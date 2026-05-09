@@ -23,6 +23,16 @@ cd pibot
 # edit datafiles/superusers.json — add your Telegram user ID
 ./launchbot.sh
 ```
+### Create new bot
+
+**AFTER RUNNING `./launchbot.sh`**
+
+Search for botfather in telegram and send it `/newbot`.
+
+After a quick setup, it will provide you with a bot token. Copy and paste it inside telegram-token file.
+
+### Add bot to a groupchat
+Find your bot in telegram and add it to a groupchat from it's profile.
 
 ## Commands
 
