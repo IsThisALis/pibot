@@ -11,6 +11,7 @@ __pycache__/
 **/dev/botinfo.md
 **/dev/plan*
 **/dev/llm-key
+**/dev/gemini-key
 **/dev/personality.md
 **/datafiles/phrases.json
 **/datafiles/superusers.json
