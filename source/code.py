@@ -1,5 +1,6 @@
 import asyncio
 import json
+import string
 import time
 from pathlib import Path
 
@@ -143,6 +144,8 @@ def user_display(user):
 
 
 rate_limiter = RateLimiter(max_calls=5, period=1.0)
+
+STRIP_PUNCT = str.maketrans("", "", string.punctuation)
 
 
 def get_llm_rate_limiter(chat_id: int) -> RateLimiter:
@@ -424,7 +427,7 @@ async def handle_message(update: Update, context):
 
         return
 
-    lower_text = text.lower()
+    lower_text = text.lower().translate(STRIP_PUNCT)
     phrases = load_phrases()
 
     if lower_text in phrases:
