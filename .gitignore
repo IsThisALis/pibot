@@ -4,7 +4,7 @@ __pycache__/
 .venv/
 
 # Persistent bot data
-**/source/bot_data.pickle
+# **/source/bot_data.pickle
 
 # Sensitive config (tokens, IDs, personal content)
 **/dev/telegram-token
