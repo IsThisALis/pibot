@@ -21,7 +21,7 @@ cd pibot
 # edit datafiles/superusers.json — спиоск суперюзеров бота
 ./launchbot.sh
 ```
-### ➕️ Create new bot
+### ➕️ Создание нового бота
 
 **ПЕРЕД ВЫПОЛНЕНИЕМ `./launchbot.sh`**
 
