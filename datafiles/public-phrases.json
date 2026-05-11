@@ -1,6 +1,10 @@
 {
-    "hello": "Hello {mention}!",
-    "hi": "Hi {mention}!",
-    "привет": "Привет {mention}!",
-    "pibot": "__botinfo__"
+  "привет": "Привет {mention}!",
+  "hello": "Hello {mention}!",
+  "hi": "Hi {mention}!",
+
+  "пибот инфа": "__botinfo__",
+  "пибот обновы": "__changelog__",
+  "pibot info": "__botinfo__",
+  "pibot updates": "__changelog__"
 }

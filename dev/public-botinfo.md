@@ -1,3 +1,3 @@
-I am a helpful bot. Happy to see you all!
+🫂 Привет! Я Пибот, лучший менеджер чатов.
 👤 Создан уткой и большим огурчиком.
 🔗 Гитхаб: https://github.com/deltashrimp/pibot

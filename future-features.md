@@ -5,7 +5,7 @@
 2. Remake phrase detection [X]
 3. Anit-raid
 4. Anti-spambot
-5. Anti-spam
+5. Anti-spam [X]
 6. Flagging new telegram users
 
 
