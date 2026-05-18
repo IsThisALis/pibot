@@ -6,15 +6,16 @@ __pycache__/
 # Persistent bot data
 # **/source/bot_data.pickle
 
-# Sensitive config (tokens, IDs, personal content)
+# Sensitive config
 **/dev/telegram-token
 **/dev/botinfo.md
 **/dev/plan*
-**/dev/llm-key
-**/dev/gemini-key
-**/dev/personality.md
+**/dev/*-key
+**/dev/personality-public.md
 **/datafiles/phrases.json
 **/datafiles/superusers.json
 
 # Временно, пока не выполню все цели
 **/source/
+isthisalis-home-adress.md
+sex-with-ramses666.mp4

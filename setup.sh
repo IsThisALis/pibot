@@ -13,18 +13,18 @@ echo "Копирование файлов конфигурации..."
 cp ./datafiles/public-phrases.json ./datafiles/phrases.json
 cp ./datafiles/public-superusers.json ./datafiles/superusers.json
 cp ./dev/public-botinfo.md ./dev/botinfo.md
-cp ./dev/personality-public.md ./dev/personality.md
+# cp ./dev/personality-public.md ./dev/personality.md
 
 echo "Создание файлов с ключами..."
 
-echo "TOKEN-WILL-BE-HERE-LATER" >./dev/telegram-token
-echo "YOUR_GEMINI_API_KEY_HERE" >./dev/gemini-key
-echo "gsk_YOUR_GROQ_API_KEY_HERE" >./dev/llm-key
+echo "YOUR-TELEGRAM-TOKEN" >./dev/telegram-token
+echo "YOUR-GEMINI-API-KEY-HERE" >./dev/gemini-key
+echo "YOUR-GROQ-API-KEY-HERE" >./dev/groq-key
 
 echo "------------------------------------------------"
 echo "[WARNING]: Впишите id суперюзеров в файл datafiles/superusers.json!"
 echo "[WARNING]: Вставьте токен бота в dev/telegram-token (получить у BotFather)"
-echo "[WARNING]: Вставьте API ключ в dev/gemini-key или dev/llm-key"
+echo "[WARNING]: Вставьте API ключ в dev/gemini-key или dev/groq-key"
 echo "Вы можете настроить свои фразы в datafiles/phrases.json"
 echo "Отредактируйте dev/botinfo.md чтобы изменить сообщение о боте"
 echo "------------------------------------------------"
