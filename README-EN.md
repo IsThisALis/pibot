@@ -1,68 +1,40 @@
-# 🤖 PiBot
+# Pibot — Telegram Chat Bot
 
-🛩️ Telegram group moderation and interactive response bot. Supports English and Russian.
+Multifunctional Telegram bot with phrase responses, RP commands, AI integration, and moderation tools.
 
-## ⚙️ Features
+## Features
 
-- **Phrase responses** — exact (case-insensitive) trigger phrases with customizable replies
-- **Moderation commands** — `$kick`, `$ban`, `$mute`, `$unmute` with permission levels
-- **NUKE** — `$nuke n` deletes last `n` messages
-- **Command aliases** — synonyms in `synonyms.json` (e.g. `$nuke` / `$burn`)
-- **Permission system** — superusers, group admins, and regular users
-- **Persistence** — state survives restarts via PicklePersistence
+- **Phrase responses** — automatically replies to trigger phrases from `phrases.json`
+- **RP commands** — interactive roleplay (hug, kiss, etc.) via reply
+- **AI integration** — replies with context when the bot is @mentioned in a reply (Gemini or Groq)
+- **Admin commands** — `$nuke`, `$mute`, `$unmute`
+- **Superuser commands** — `$kick`, `$ban`, `$changeai`
+- **Anti-spam** — rate limiter, age filter, trigger phrase spam protection, Telegram mute
 
-## 🚀 Quick start
-
-```bash
-git clone https://github.com/deltashrimp/pibot.git
-cd pibot
-./setup.sh
-# edit dev/telegram-token — paste your bot token
-# edit datafiles/superusers.json — add your Telegram user ID
-./launchbot.sh
-```
-### ➕️ Create new bot
-
-**BEFORE RUNNING `./launchbot.sh`**
-
-Search for botfather in telegram and send it `/newbot`.
-
-After a quick setup, it will provide you with a bot token. Copy and paste it inside telegram-token file.
-
-### ➕️ Add bot to a groupchat
-Find your bot in telegram and add it to a groupchat from it's profile.
-
-## 🛠️ Commands
-
-| Command | Who can use |
-|---------|------------|
-| `$nuke n` | group admin | 
-| `$kick @user` | superuser | 
-| `$ban @user` | superuser | 
-| `$mute @user` | group admin | 
-| `$unmute @user` | group admin | 
-
-Target users by: **reply** to their message or **@mention**.
-
-## 🌳 Structure
+## Structure
 
 ```
 pibot/
-├── source/code.py              # main bot logic
-├── datafiles/
-│   ├── synonyms.json           # command aliases
-│   ├── public-phrases.json     # example trigger phrases
-│   └── public-superusers.json  # template superuser list
-├── dev/
-│   └── public-botinfo.md       # template bot info
-├── launchbot.sh                # start script
-└── setup.sh                    # first-time setup
+├── bot-data/         # JSON data files (phrases, synonyms, rp-commands)
+├── env/              # Config files (gitignored: .env, botinfo.txt, changelog.txt)
+├── info/             # Documentation
+├── source/code.py    # Main bot (~900 lines)
+└── setup.sh          # Deployment script
 ```
-_setup.sh will add private versions of public files_
 
-## 📃 License
+## Setup
 
-GNU General Public License v3.0
+1. Copy the repository to the server
+2. Create `env/.env` with `BOT_TOKEN`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `GROQ_BASE_URL`, `SUPERUSER_IDS`
+3. Optionally configure `env/botinfo.txt` and `env/changelog.txt`
+4. Run `bash setup.sh` to install systemd service or run manually
 
-## 👨‍💻 Devs and helpers
-Main developers: deltashrimp, opencode/big-pickle
+## Commands
+
+Full list in `info/command-list.md` or type `пибот команды` in chat.
+
+## Dependencies
+
+- python-telegram-bot (v20+)
+- google-genai
+- openai (AsyncOpenAI)

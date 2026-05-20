@@ -3,19 +3,18 @@ __pycache__/
 *.pyc
 .venv/
 
-# Persistent bot data
-# **/source/bot_data.pickle
-
 # Sensitive config
-**/dev/telegram-token
-**/dev/botinfo.md
-**/dev/plan*
-**/dev/*-key
-**/dev/personality-public.md
-**/datafiles/phrases.json
-**/datafiles/superusers.json
+env/
+source/bot_data.pickle
 
-# Временно, пока не выполню все цели
-**/source/
 isthisalis-home-adress.md
 sex-with-ramses666.mp4
+**/opencode-sessions/
+
+bot-data/personality-public.md
+bot-data/phrases.json
+bot-data/superusers.json
+bot-data/personality.md
+
+info/botinfo.md
+info/documentation.md
