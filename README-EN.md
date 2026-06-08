@@ -18,7 +18,7 @@ pibot/
 ├── bot-data/         # JSON data files (phrases, synonyms, rp-commands)
 ├── env/              # Config files (gitignored: .env, botinfo.txt, changelog.txt)
 ├── info/             # Documentation
-├── source/code.py    # Main bot (~900 lines)
+├── source/pibot.py    # Main bot (~900 lines)
 └── setup.sh          # Deployment script
 ```
 

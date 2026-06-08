@@ -2,11 +2,5 @@
   "привет": "Привет {mention}!",
 
   "hello": "Hello {mention}!",
-  "hi": "Hi {mention}!",
-
-  "пибот инфа": "__botinfo__",
-  "пибот обновы": "__changelog__",
-
-  "pibot info": "__botinfo__",
-  "pibot updates": "__changelog__"
+  "hi": "Hi {mention}!"
 }

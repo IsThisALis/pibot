@@ -6,6 +6,7 @@ __pycache__/
 # Sensitive config
 env/
 source/bot_data.pickle
+.mypy_cache/
 
 isthisalis-home-adress.md
 sex-with-ramses666.mp4
@@ -13,8 +14,9 @@ sex-with-ramses666.mp4
 
 bot-data/personality-public.md
 bot-data/phrases.json
-bot-data/superusers.json
 bot-data/personality.md
+bot-data/banned-users.json
 
 info/botinfo.md
-info/documentation.md
+source/pibot.py.BACKUP.txt
+info/documentation.json

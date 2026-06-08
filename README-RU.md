@@ -18,7 +18,7 @@ pibot/
 ├── bot-data/         # JSON-файлы данных (phrases, synonyms, rp-commands)
 ├── env/              # Файлы конфигов (gitignored: .env, botinfo.txt, changelog.txt)
 ├── info/             # Документация
-├── source/code.py    # Основной код бота (~900 строк)
+├── source/pibot.py    # Основной код бота (~900 строк)
 └── setup.sh          # Скрипт развёртывания
 ```
 

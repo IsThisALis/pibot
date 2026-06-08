@@ -5,21 +5,20 @@ import string
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable, Optional
 
-from google import genai
-from google.genai import types as genai_types
 from openai import AsyncOpenAI
 from telegram import (
     ChatPermissions,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
+    Message,
     MessageEntity,
     Update,
+    User,
 )
 from telegram.constants import ChatMemberStatus
 from telegram.ext import (
     Application,
-    CallbackQueryHandler,
+    CallbackContext,
     CommandHandler,
     MessageHandler,
     PicklePersistence,
@@ -29,36 +28,35 @@ from telegram.ext import (
 BASE = Path(__file__).parent.parent
 TOKEN_PATH = BASE / "env" / "telegram-token"
 PHRASES_PATH = BASE / "bot-data" / "phrases.json"
-BOTINFO_PATH = BASE / "info" / "botinfo.md"
-CHANGELOG_PATH = BASE / "info" / "changelog.md"
+BOTINFO_PATH = BASE / "bot-data" / "botinfo.md"
+CHANGELOG_PATH = BASE / "bot-data" / "changelog.md"
 COMMANDLIST_PATH = BASE / "info" / "command-list.md"
-SYNONYMS_PATH = BASE / "bot-data" / "synonyms.json"
-SUPERUSERS_PATH = BASE / "bot-data" / "superusers.json"
-RP_COMMANDS_PATH = BASE / "bot-data" / "rp-commands.json"
+RP_COMMANDS_PATH = BASE / "bot-data" / "rp-phrases.json"
+BANNED_USERS_PATH = BASE / "bot-data" / "banned-users.json"
+DEV_IDS_PATH = BASE / "env" / "dev-ids.json"
 
 MAX_TRACKED_MESSAGES = 1000
 DELETE_BATCH_SIZE = 100
-MAX_MESSAGE_AGE = 120  # 2 minutes in seconds
-TRIGGER_SPAM_WINDOW = 60  # seconds
+MAX_MESSAGE_AGE = 120
+TRIGGER_SPAM_WINDOW = 60
 TRIGGER_SPAM_LIMIT = 5
-TRIGGER_SPAM_MUTE = 120  # seconds to ignore user after spam
+TRIGGER_SPAM_MUTE = 120
 
-COMMAND_PREFIX = "$"
 CHANCE_TRIGGER = "пибот инфа"
+WELCOME_MESSAGE = "Я вернулась"
 
-USE_GROQ = True
-USE_GEMINI = False
-
-GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_KEY_PATH = BASE / "env" / "gemini-key"
 GROQ_KEY_PATH = BASE / "env" / "groq-key"
 PERSONALITY_PATH = BASE / "bot-data" / "personality.md"
 
-COMMANDS = {}
+RANK_OWNER = 1
+RANK_ADMIN_PLUS = 2
+RANK_ADMIN = 3
+RANK_MEMBER = 4
 
-llm_client = None
-gemini_client = None
-personality_prompt = ""
+PIBOT_COMMANDS: dict[str, dict[str, Any]] = {}
+
+llm_client: Optional[AsyncOpenAI] = None
+personality_prompt: str = ""
 
 NO_PERMISSIONS = ChatPermissions(
     can_send_messages=False,
@@ -93,27 +91,25 @@ ALL_PERMISSIONS = ChatPermissions(
 )
 
 
-def command(name, admin_command=False, superuser_command=False):
-    def decorator(func):
-        COMMANDS[name] = {
-            "handler": func,
-            "admin-command": admin_command,
-            "superuser-command": superuser_command,
-        }
+def pibot_command(
+    name: str, value: int, dev_only: bool = False
+) -> Callable[[Callable], Callable]:
+    def decorator(func: Callable) -> Callable:
+        PIBOT_COMMANDS[name] = {"handler": func, "value": value, "dev_only": dev_only}
         return func
 
     return decorator
 
 
 class RateLimiter:
-    def __init__(self, max_calls=5, period=1.0):
+    def __init__(self, max_calls: int = 5, period: float = 1.0) -> None:
         self.max_calls = max_calls
         self.period = period
         self.tokens = float(max_calls)
         self.last_refill = time.monotonic()
         self.lock = asyncio.Lock()
 
-    async def acquire(self):
+    async def acquire(self) -> bool:
         async with self.lock:
             now = time.monotonic()
             elapsed = now - self.last_refill
@@ -127,62 +123,50 @@ class RateLimiter:
             return False
 
 
-def load_phrases():
+def load_phrases() -> dict[str, str]:
     if PHRASES_PATH.exists():
         with open(PHRASES_PATH) as f:
             return json.load(f)
     return {}
 
 
-def load_botinfo():
-    if BOTINFO_PATH.exists():
-        return BOTINFO_PATH.read_text().strip()
+def load_text_file(path: Path) -> str:
+    if path.exists():
+        return path.read_text().strip()
     return ""
 
 
-def load_changelog():
-    if CHANGELOG_PATH.exists():
-        return CHANGELOG_PATH.read_text().strip()
-    return ""
-
-
-def load_commandlist():
-    if COMMANDLIST_PATH.exists():
-        return COMMANDLIST_PATH.read_text().strip()
-    return ""
-
-
-def load_synonyms() -> dict[str, str]:
-    if not SYNONYMS_PATH.exists():
-        return {}
-    with open(SYNONYMS_PATH) as f:
-        groups = json.load(f)
-    mapping = {}
-    for canonical, aliases in groups.items():
-        for alias in aliases:
-            mapping[alias.lower()] = canonical.lower()
-    return mapping
-
-
-def load_superusers() -> set[int]:
-    if SUPERUSERS_PATH.exists():
-        with open(SUPERUSERS_PATH) as f:
-            return set(json.load(f))
-    return {934151958}
-
-
-def load_rp_commands() -> dict:
+def load_rp_commands() -> dict[str, str]:
     if RP_COMMANDS_PATH.exists():
         with open(RP_COMMANDS_PATH, encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 
-def get_mention(user):
+def load_banned_users() -> set[int]:
+    if BANNED_USERS_PATH.exists():
+        with open(BANNED_USERS_PATH) as f:
+            return set(json.load(f))
+    return set()
+
+
+def save_banned_users(ids: set[int]) -> None:
+    with open(BANNED_USERS_PATH, "w") as f:
+        json.dump(sorted(ids), f)
+
+
+def load_dev_ids() -> set[int]:
+    if DEV_IDS_PATH.exists():
+        with open(DEV_IDS_PATH) as f:
+            return set(json.load(f))
+    return set()
+
+
+def get_mention(user: User) -> str:
     return f"@{user.username}" if user.username else (user.first_name or "User")
 
 
-def user_display(user):
+def user_display(user: User) -> str:
     return get_mention(user)
 
 
@@ -191,7 +175,7 @@ rate_limiter = RateLimiter(max_calls=5, period=1.0)
 STRIP_PUNCT = str.maketrans("", "", string.punctuation)
 
 
-def is_user_ignored(context, user_id: int) -> bool:
+def is_user_ignored(context: CallbackContext, user_id: int) -> bool:
     ignored = context.chat_data.get("ignored_until", {})
     expiry = ignored.get(user_id)
     if expiry is None:
@@ -202,7 +186,7 @@ def is_user_ignored(context, user_id: int) -> bool:
     return True
 
 
-def track_trigger_spam(context, user_id: int, phrase: str) -> bool:
+def track_trigger_spam(context: CallbackContext, user_id: int, phrase: str) -> bool:
     now = time.time()
     trackers = context.chat_data.setdefault("trigger_spam", {})
     user_tracker = trackers.setdefault(user_id, {})
@@ -217,7 +201,7 @@ def track_trigger_spam(context, user_id: int, phrase: str) -> bool:
     return False
 
 
-llm_rate_limiters = {}
+llm_rate_limiters: dict[int, RateLimiter] = {}
 
 
 def get_llm_rate_limiter(chat_id: int) -> RateLimiter:
@@ -226,58 +210,30 @@ def get_llm_rate_limiter(chat_id: int) -> RateLimiter:
     return llm_rate_limiters[chat_id]
 
 
-def init_clients():
-    global llm_client, gemini_client
+def init_clients() -> None:
+    global llm_client
     llm_client = None
-    gemini_client = None
     try:
-        if USE_GROQ:
-            groq_key = GROQ_KEY_PATH.read_text().strip()
-            if groq_key and groq_key != "YOUR-GROQ-API-KEY-HERE":
-                llm_client = AsyncOpenAI(
-                    api_key=groq_key, base_url="https://api.groq.com/openai/v1"
-                )
+        groq_key = GROQ_KEY_PATH.read_text().strip()
+        if groq_key and groq_key != "YOUR-GROQ-API-KEY-HERE":
+            llm_client = AsyncOpenAI(
+                api_key=groq_key, base_url="https://api.groq.com/openai/v1"
+            )
     except Exception as e:
         print(f"[Init] Groq client error: {e}")
-    try:
-        if USE_GEMINI:
-            gemini_key = GEMINI_KEY_PATH.read_text().strip()
-            if gemini_key and gemini_key != "YOUR-GEMINI-API-KEY-HERE":
-                gemini_client = genai.Client(api_key=gemini_key)
-    except Exception as e:
-        print(f"[Init] Gemini client error: {e}")
 
 
 async def ask_llm(history: list[dict]) -> str:
     if not personality_prompt:
         return ""
     try:
-        if USE_GROQ:
-            response = await llm_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "system", "content": personality_prompt}] + history,
-                max_tokens=300,
-                temperature=0.9,
-            )
-            return response.choices[0].message.content.strip()
-        elif USE_GEMINI:
-            contents = []
-            for msg in history:
-                role = "user" if msg["role"] == "user" else "model"
-                contents.append(
-                    genai_types.Content(
-                        role=role,
-                        parts=[genai_types.Part.from_text(text=msg["content"])],
-                    )
-                )
-            response = await gemini_client.aio.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=contents,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=personality_prompt
-                ),
-            )
-            return response.text.strip()
+        response = await llm_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "system", "content": personality_prompt}] + history,
+            max_tokens=300,
+            temperature=0.9,
+        )
+        return response.choices[0].message.content.strip()
     except Exception as e:
         code = (
             getattr(e, "status_code", None)
@@ -288,25 +244,57 @@ async def ask_llm(history: list[dict]) -> str:
         if code:
             return f"__API_ERR:{code}"
         return "__API_ERR"
+    return ""
 
 
-def track_id(context, chat_id: int, message_id: int):
+def track_id(context: CallbackContext, chat_id: int, message_id: int) -> None:
     message_ids = context.chat_data.setdefault("message_ids", [])
     message_ids.append(message_id)
     if len(message_ids) > MAX_TRACKED_MESSAGES:
         del message_ids[: MAX_TRACKED_MESSAGES // 2]
 
 
-async def safe_reply(update: Update, context, text: str, **kwargs):
+async def safe_reply(
+    update: Update, context: CallbackContext, text: str, **kwargs: Any
+) -> Optional[Message]:
     try:
         sent = await update.message.reply_text(text, **kwargs)
         track_id(context, update.effective_chat.id, sent.message_id)
         return sent
     except Exception:
+        return None
+
+
+async def get_user_rank(update: Update, context: CallbackContext, user_id: int) -> int:
+    try:
+        member = await update.effective_chat.get_member(user_id)
+        if member.status == ChatMemberStatus.OWNER:
+            return RANK_OWNER
+    except Exception:
         pass
 
+    ranks = context.chat_data.setdefault("ranks", {})
+    if user_id in ranks:
+        return ranks[user_id]
 
-async def track_all_messages(update: Update, context):
+    try:
+        member = await update.effective_chat.get_member(user_id)
+        if member.status == ChatMemberStatus.ADMINISTRATOR:
+            return RANK_ADMIN
+    except Exception:
+        pass
+
+    return RANK_MEMBER
+
+
+async def target_immune_to_mkb(
+    update: Update, context: CallbackContext, target_user_id: int
+) -> bool:
+    rank = await get_user_rank(update, context, target_user_id)
+    return rank <= RANK_ADMIN
+
+
+async def track_all_messages(update: Update, context: CallbackContext) -> None:
     if not update.message:
         return
 
@@ -323,13 +311,12 @@ async def track_all_messages(update: Update, context):
         return
     if update.effective_chat.type not in ("group", "supergroup"):
         return
-    if user.id in load_superusers():
+
+    if user.id in load_banned_users():
         return
-    try:
-        member = await update.effective_chat.get_member(user.id)
-        if member.status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER):
-            return
-    except Exception:
+
+    user_rank = await get_user_rank(update, context, user.id)
+    if user_rank <= RANK_ADMIN:
         return
 
     now = time.time()
@@ -360,50 +347,19 @@ async def track_all_messages(update: Update, context):
         print(f"⛔️ [AntiSpam] не получилось замутить: {e}")
         return
 
-    try:
-        admins = await context.bot.get_chat_administrators(chat_id)
-    except Exception as e:
-        print(f"⛔️ [AntiSpam] не удалось получить список админов: {e}")
-        return
-
-    admin_parts = []
-    for a in admins:
-        if a.user.is_bot:
-            continue
-        if a.user.username:
-            admin_parts.append(f"@{a.user.username}")
-        elif a.user.first_name:
-            admin_parts.append(
-                f'<a href="tg://user?id={a.user.id}">{a.user.first_name}</a>'
-            )
-        else:
-            admin_parts.append(f'<a href="tg://user?id={a.user.id}">{a.user.id}</a>')
-
     spammer_name = (
         f"@{user.username}" if user.username else user.first_name or str(user.id)
     )
 
     await context.bot.send_message(
         chat_id=chat_id,
-        text=f"✅️ Я замутил {spammer_name} за спам.\n{' '.join(admin_parts)}",
-        parse_mode="HTML",
+        text=f"✅️ Я замутил {spammer_name} за спам.",
     )
 
 
-async def is_admin_user(chat, user_id: int) -> bool:
-    try:
-        member = await chat.get_member(user_id)
-        return member.status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER)
-    except Exception:
-        return False
-
-
-async def is_admin_cmd(update: Update, context):
-    user = update.message.from_user
-    return await is_admin_user(update.effective_chat, user.id)
-
-
-async def resolve_user(update: Update, context, params: str):
+async def resolve_user(
+    update: Update, context: CallbackContext, params: str
+) -> Optional[User]:
     if update.message.reply_to_message and update.message.reply_to_message.from_user:
         return update.message.reply_to_message.from_user
 
@@ -439,21 +395,13 @@ async def resolve_user(update: Update, context, params: str):
     return None
 
 
-async def target_immune(update: Update, target_user) -> bool:
-    if target_user.id in load_superusers():
-        return True
-    try:
-        member = await update.effective_chat.get_member(target_user.id)
-        return member.status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER)
-    except Exception:
-        return False
-
-
-@command("nuke", admin_command=True)
-async def handle_nuke(update: Update, context, params: str):
+@pibot_command("сотри", 2)
+async def handle_nuke(update: Update, context: CallbackContext, params: str) -> None:
     if not params:
         await safe_reply(
-            update, context, "Использование: $nuke n, где n - целое положительное число"
+            update,
+            context,
+            "Использование: пибот сотри n, где n - целое положительное число",
         )
         return
 
@@ -463,7 +411,9 @@ async def handle_nuke(update: Update, context, params: str):
             raise ValueError
     except ValueError:
         await safe_reply(
-            update, context, "Использование: $nuke n, где n - целое положительное число"
+            update,
+            context,
+            "Использование: пибот сотри n, где n - целое положительное число",
         )
         return
 
@@ -474,7 +424,7 @@ async def handle_nuke(update: Update, context, params: str):
         await safe_reply(update, context, "⚠️ Не найдено сообщений")
         return
 
-    n = min(n, len(message_ids))
+    n = min(n + 1, len(message_ids))
     ids_to_delete = message_ids[-n:]
     del message_ids[-n:]
 
@@ -487,8 +437,8 @@ async def handle_nuke(update: Update, context, params: str):
             break
 
 
-@command("kick", superuser_command=True)
-async def handle_kick(update: Update, context, params: str):
+@pibot_command("кикни", 2)
+async def handle_kick(update: Update, context: CallbackContext, params: str) -> None:
     target = await resolve_user(update, context, params)
     if not target:
         await safe_reply(
@@ -498,8 +448,8 @@ async def handle_kick(update: Update, context, params: str):
         )
         return
 
-    if await target_immune(update, target):
-        await safe_reply(update, context, "⛔️ Админов кикать нельзя")
+    if await target_immune_to_mkb(update, context, target.id):
+        await safe_reply(update, context, "⛔️ Этого пользователя нельзя кикнуть")
         return
 
     try:
@@ -510,30 +460,93 @@ async def handle_kick(update: Update, context, params: str):
         await safe_reply(update, context, f"⚠️ Ошибка кика: {e}")
 
 
-@command("ban", superuser_command=True)
-async def handle_ban(update: Update, context, params: str):
-    target = await resolve_user(update, context, params)
+@pibot_command("кинь", 1)
+async def handle_ban(update: Update, context: CallbackContext, params: str) -> None:
+    if not params.startswith("в гулаг ") and not params.startswith("вгулаг "):
+        await safe_reply(
+            update,
+            context,
+            "Использование: пибот кинь в гулаг @user",
+        )
+        return
+
+    target_str = params[8:].strip()
+    target = await resolve_user(update, context, target_str)
     if not target:
         await safe_reply(
             update, context, "⚠️ Кого банить? Ответь на сообщение или укажи @username"
         )
         return
 
-    if await target_immune(update, target):
-        await safe_reply(update, context, "⛔️ Админов банить нельзя")
+    if await target_immune_to_mkb(update, context, target.id):
+        await safe_reply(update, context, "⛔️ Этого пользователя нельзя забанить")
         return
 
     try:
         await context.bot.ban_chat_member(
             update.effective_chat.id, target.id, revoke_messages=True
         )
+        banned = load_banned_users()
+        banned.add(target.id)
+        save_banned_users(banned)
         await safe_reply(update, context, f"✅️ {user_display(target)} был забанен")
     except Exception as e:
         await safe_reply(update, context, f"⚠️ Ошибка бана: {e}")
 
 
-@command("mute", admin_command=True)
-async def handle_mute(update: Update, context, params: str):
+@pibot_command("верни", 1)
+async def handle_unban(update: Update, context: CallbackContext, params: str) -> None:
+    target = await resolve_user(update, context, params)
+    if not target:
+        await safe_reply(
+            update,
+            context,
+            "⚠️ Кого разбанить? Ответь на сообщение или укажи @username",
+        )
+        return
+
+    try:
+        await context.bot.unban_chat_member(
+            update.effective_chat.id, target.id, only_if_banned=True
+        )
+        banned = load_banned_users()
+        banned.discard(target.id)
+        save_banned_users(banned)
+        await safe_reply(
+            update, context, f"✅️ {user_display(target)} возвращён из гулага"
+        )
+    except Exception as e:
+        await safe_reply(update, context, f"⚠️ Ошибка разбана: {e}")
+
+
+@pibot_command("заблокируй", 0, dev_only=True)
+async def handle_block(update: Update, context: CallbackContext, params: str) -> None:
+    if not params:
+        await safe_reply(
+            update,
+            context,
+            "Использование: пибот заблокируй <id> или @username",
+        )
+        return
+
+    target = await resolve_user(update, context, params)
+    if target:
+        target_id = target.id
+    else:
+        try:
+            target_id = int(params.strip())
+        except ValueError:
+            await safe_reply(update, context, "⚠️ Укажи числовой ID или @username")
+            return
+
+    banned = load_banned_users()
+    banned.add(target_id)
+    save_banned_users(banned)
+    await safe_reply(update, context, f"✅️ Пользователь {target_id} заблокирован")
+
+
+@pibot_command("мут", 3)
+async def handle_mute(update: Update, context: CallbackContext, params: str) -> None:
     duration_minutes = None
     user_params = params
 
@@ -541,8 +554,8 @@ async def handle_mute(update: Update, context, params: str):
         parts = params.rsplit(maxsplit=1)
         if len(parts) == 2:
             try:
-                duration_minutes = int(parts[1])
-                if duration_minutes > 0:
+                duration_minutes = float(parts[1])
+                if duration_minutes >= 0.5:
                     user_params = parts[0]
                 else:
                     duration_minutes = None
@@ -550,8 +563,8 @@ async def handle_mute(update: Update, context, params: str):
                 pass
         elif update.message.reply_to_message:
             try:
-                duration_minutes = int(parts[0])
-                if duration_minutes > 0:
+                duration_minutes = float(parts[0])
+                if duration_minutes >= 0.5:
                     user_params = ""
             except ValueError:
                 pass
@@ -559,17 +572,19 @@ async def handle_mute(update: Update, context, params: str):
     target = await resolve_user(update, context, user_params)
     if not target:
         await safe_reply(
-            update, context, "⚠️ Кого мутить? Ответь на сообщение или укажи @username"
+            update,
+            context,
+            "⚠️ Кого мутить? Ответь на сообщение или укажи @username",
         )
         return
 
-    if await target_immune(update, target):
-        await safe_reply(update, context, "⛔️ Админов мутить нельзя")
+    if await target_immune_to_mkb(update, context, target.id):
+        await safe_reply(update, context, "⛔️ Этого пользователя нельзя замутить")
         return
 
     try:
         if duration_minutes is not None:
-            until_date = int(time.time()) + duration_minutes * 60
+            until_date = int(time.time()) + int(duration_minutes * 60)
             await context.bot.restrict_chat_member(
                 update.effective_chat.id,
                 target.id,
@@ -593,17 +608,19 @@ async def handle_mute(update: Update, context, params: str):
         await safe_reply(update, context, f"⚠️ Ошибка мута: {e}")
 
 
-@command("unmute", admin_command=True)
-async def handle_unmute(update: Update, context, params: str):
+@pibot_command("размут", 3)
+async def handle_unmute(update: Update, context: CallbackContext, params: str) -> None:
     target = await resolve_user(update, context, params)
     if not target:
         await safe_reply(
-            update, context, "⚠️ Кого размутить? Ответь на сообщение или укажи @username"
+            update,
+            context,
+            "⚠️ Кого размутить? Ответь на сообщение или укажи @username",
         )
         return
 
-    if await target_immune(update, target):
-        await safe_reply(update, context, "⛔️ Админов размутить нельзя")
+    if await target_immune_to_mkb(update, context, target.id):
+        await safe_reply(update, context, "⛔️ Этого пользователя нельзя размутить")
         return
 
     try:
@@ -615,19 +632,122 @@ async def handle_unmute(update: Update, context, params: str):
         await safe_reply(update, context, f"⚠️ Ошибка размута: {e}")
 
 
-@command("changeai", superuser_command=True)
-async def handle_changeai(update: Update, context, params: str):
-    backend = "Gemini" if USE_GEMINI else "Groq"
+@pibot_command("ранг", 1)
+async def handle_rank(update: Update, context: CallbackContext, params: str) -> None:
+    parts = params.split(maxsplit=2)
+    if len(parts) < 1:
+        await safe_reply(
+            update,
+            context,
+            "Использование: пибот ранг n для @user (n = 2, 3, 4)",
+        )
+        return
+
+    try:
+        new_rank = int(parts[0])
+    except ValueError:
+        await safe_reply(
+            update,
+            context,
+            "Использование: пибот ранг n для @user (n = 2, 3, 4)",
+        )
+        return
+
+    if new_rank not in (RANK_ADMIN_PLUS, RANK_ADMIN, RANK_MEMBER):
+        await safe_reply(update, context, "Ранг может быть только 2, 3 или 4")
+        return
+
+    target_str = ""
+    if len(parts) >= 3 and parts[1] == "для":
+        target_str = parts[2]
+    elif len(parts) == 2:
+        target_str = parts[1]
+
+    target = await resolve_user(update, context, target_str)
+    if not target:
+        await safe_reply(
+            update,
+            context,
+            "⚠️ Кому изменить ранг? Ответь на сообщение или укажи @username",
+        )
+        return
+
+    target_rank = await get_user_rank(update, context, target.id)
+    if target_rank == RANK_OWNER:
+        await safe_reply(update, context, "⛔️ Нельзя изменить ранг владельца")
+        return
+
+    ranks = context.chat_data.setdefault("ranks", {})
+    ranks[target.id] = new_rank
+
+    rank_names = {2: "Admin+", 3: "Admin", 4: "Member"}
     await safe_reply(
         update,
         context,
-        f"Текущий AI бэкенд: {backend}",
-        reply_markup=backend_markup(),
+        f"✅️ Ранг {user_display(target)} изменён на {rank_names[new_rank]}",
     )
 
 
-async def handle_message(update: Update, context):
+@pibot_command("био", 4)
+async def handle_botinfo_cmd(
+    update: Update, context: CallbackContext, params: str
+) -> None:
+    text = load_text_file(BOTINFO_PATH)
+    if not text:
+        text = "⚠️ Инфа потерялась, проверь путь к моему описанию"
+    await safe_reply(update, context, text)
+
+
+@pibot_command("обновы", 4)
+async def handle_changelog_cmd(
+    update: Update, context: CallbackContext, params: str
+) -> None:
+    text = load_text_file(CHANGELOG_PATH)
+    if not text:
+        text = "⚠️ Инфа потерялась, проверь путь к моим обновам"
+    await safe_reply(update, context, text)
+
+
+@pibot_command("команды", 4)
+async def handle_commands_cmd(
+    update: Update, context: CallbackContext, params: str
+) -> None:
+    text = load_text_file(COMMANDLIST_PATH)
+    if not text:
+        text = "⚠️ Инфа потерялась, проверь путь к списку команд"
+    await safe_reply(update, context, text)
+
+
+@pibot_command("ранги", 4)
+async def handle_rank_list(
+    update: Update, context: CallbackContext, params: str
+) -> None:
+    ranks = context.chat_data.setdefault("ranks", {})
+    rank_names = {2: "Admin+", 3: "Admin"}
+    lines = []
+
+    for user_id, rank in ranks.items():
+        if rank not in (2, 3):
+            continue
+        try:
+            member = await update.effective_chat.get_member(user_id)
+            display = user_display(member.user)
+        except Exception:
+            display = str(user_id)
+        lines.append(f"{display} имеет ранг {rank} — {rank_names[rank]}")
+
+    if not lines:
+        await safe_reply(update, context, "Нет пользователей с особыми рангами")
+        return
+
+    await safe_reply(update, context, "\n".join(lines))
+
+
+async def handle_message(update: Update, context: CallbackContext) -> None:
     if not update.message or not update.message.text:
+        return
+
+    if update.message.from_user and update.message.from_user.id in load_banned_users():
         return
 
     text = update.message.text.strip()
@@ -640,46 +760,38 @@ async def handle_message(update: Update, context):
             msg_date = msg_date.replace(tzinfo=timezone.utc)
         msg_age = (datetime.now(timezone.utc) - msg_date).total_seconds()
         if msg_age > MAX_MESSAGE_AGE:
-            if text.startswith(COMMAND_PREFIX):
-                pass
-            else:
+            if not text.lower().startswith("пибот"):
                 return
 
-    if text.startswith(COMMAND_PREFIX):
-        rest = text[len(COMMAND_PREFIX) :].strip()
+    if text.lower().startswith("пибот "):
+        rest = text[6:].strip()
         if not rest:
             return
 
         parts = rest.split(maxsplit=1)
-        alias = parts[0].lower()
+        subcommand = parts[0].lower()
         params = parts[1] if len(parts) > 1 else ""
 
-        synonyms = load_synonyms()
-        canonical = synonyms.get(alias) or alias
+        if subcommand in PIBOT_COMMANDS:
+            cmd_config = PIBOT_COMMANDS[subcommand]
+            handler = cmd_config["handler"]
+            required_value = cmd_config["value"]
+            dev_only = cmd_config.get("dev_only", False)
 
-        if canonical in COMMANDS:
-            cmd_config = COMMANDS[canonical]
             user_id = update.message.from_user.id
-            is_super = user_id in load_superusers()
 
-            if not is_super:
-                if cmd_config.get("superuser-command"):
+            if dev_only and user_id in load_dev_ids():
+                pass
+            else:
+                user_rank = await get_user_rank(update, context, user_id)
+                if user_rank > required_value:
                     await safe_reply(
-                        update, context, "⛔️ Фиг тебе, это только для суперюзеров"
-                    )
-                    return
-                elif cmd_config.get("admin-command") and not await is_admin_cmd(
-                    update, context
-                ):
-                    await safe_reply(
-                        update, context, "⛔️ Фиг тебе, это только для админов"
+                        update, context, "⛔️ Недостаточно прав для этой команды"
                     )
                     return
 
-            await cmd_config["handler"](update, context, params)
+            await handler(update, context, params)
             return
-
-        return
 
     if is_user_ignored(context, update.message.from_user.id):
         return
@@ -717,17 +829,17 @@ async def handle_message(update: Update, context):
         mention = get_mention(update.message.from_user)
 
         if response == "__botinfo__":
-            response = load_botinfo()
+            response = load_text_file(BOTINFO_PATH)
             if not response:
                 response = "⚠️ Инфа потерялась, проверь путь к моему описанию"
 
         if response == "__changelog__":
-            response = load_changelog()
+            response = load_text_file(CHANGELOG_PATH)
             if not response:
                 response = "⚠️ Инфа потерялась, проверь путь к моим обновам"
 
         if response == "__commandlist__":
-            response = load_commandlist()
+            response = load_text_file(COMMANDLIST_PATH)
             if not response:
                 response = "⚠️ Инфа потерялась, проверь путь к списку команд"
 
@@ -750,13 +862,10 @@ async def handle_message(update: Update, context):
         )
         return
 
-    if (USE_GROQ and not llm_client) or (USE_GEMINI and not gemini_client):
+    if not llm_client:
         return
 
     if update.message.from_user.id == context.bot.id:
-        return
-
-    if update.message.from_user.id not in load_superusers():
         return
 
     is_mentioned = False
@@ -807,81 +916,45 @@ async def handle_message(update: Update, context):
         await safe_reply(update, context, response_text, disable_notification=True)
 
 
-def backend_markup():
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("Use Groq API", callback_data="groq"),
-                InlineKeyboardButton("Use Gemini API", callback_data="gemini"),
-            ]
-        ]
-    )
+def welcome_text() -> str:
+    return f"{WELCOME_MESSAGE}"  # Don't add AI backend name
 
 
-async def start(update: Update, context):
-    backend = "Gemini" if USE_GEMINI else "Groq"
-    await safe_reply(update, context, f"Я в системе 😎\n\nТекущий AI бэкенд: {backend}")
+async def start(update: Update, context: CallbackContext) -> None:
+    await safe_reply(update, context, welcome_text())
 
 
-async def handle_backend_switch(update: Update, context):
-    query = update.callback_query
-
-    global USE_GROQ, USE_GEMINI
-    backend = query.data
-    current = "groq" if USE_GROQ else "gemini"
-    if backend == current:
-        await query.answer("Уже выбран этот бэкенд")
-        return
-
-    USE_GROQ = backend == "groq"
-    USE_GEMINI = backend == "gemini"
-    init_clients()
-    context.bot_data["llm_backend"] = backend
-
-    await query.answer()
-    try:
-        await query.message.delete()
-    except Exception:
-        pass
-
-
-async def startup_notify(context):
+async def startup_notify(context: CallbackContext) -> None:
     known = context.bot_data.get("known_chats", set())
     for chat_id in known:
         try:
-            backend = "Gemini" if USE_GEMINI else "Groq"
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"Я в системе 😎\n\nТекущий AI бэкенд: {backend}",
+                text=welcome_text(),
             )
         except Exception:
             pass
 
 
-async def post_init(app: Application):
+async def post_init(app: Application) -> None:
     app.job_queue.run_once(startup_notify, when=3)
     for chat_data in app.chat_data.values():
         chat_data.pop("llm_history", None)
-
-    global USE_GROQ, USE_GEMINI
-    backend = app.bot_data.get("llm_backend", "groq")
-    USE_GROQ = backend == "groq"
-    USE_GEMINI = backend == "gemini"
     init_clients()
 
 
-def main():
+def main() -> None:
     global personality_prompt
 
     token = TOKEN_PATH.read_text().strip()
     if not token or token == "YOUR-TELEGRAM-TOKEN":
-        print("Please set your bot token in telegram-token")
+        print("Пожалуйста вставьте токен бота в telegram-token")
         return
 
     if PERSONALITY_PATH.exists():
         personality_prompt = PERSONALITY_PATH.read_text().strip()
     else:
-        print("personality.md not found — AI chatbot disabled")
+        print("personality.md не найден. ИИ выключен")
 
     persistence = PicklePersistence(filepath=Path(__file__).parent / "bot_data.pickle")
     app = (
@@ -893,9 +966,6 @@ def main():
     )
     app.add_handler(MessageHandler(filters.ALL, track_all_messages), group=-1)
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(
-        CallbackQueryHandler(handle_backend_switch, pattern="^(groq|gemini)$")
-    )
     app.add_handler(MessageHandler(filters.ALL, handle_message))
     print("PiBot started...")
     app.run_polling(drop_pending_updates=True)

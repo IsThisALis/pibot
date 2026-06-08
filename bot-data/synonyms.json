@@ -1,7 +1,0 @@
-{
-  "nuke": ["nuke", "burn"],
-  "kick": ["kick"],
-  "ban": ["ban"],
-  "mute": ["mute"],
-  "unmute": ["unmute"]
-}
