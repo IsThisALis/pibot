@@ -1,49 +1,55 @@
 #!/bin/bash
 echo "Запуск установки Пибота"
 echo "Нажмите ctrl+C для отмены"
-echo "------------------------------------------------ \n"
+echo -e "------------------------------------------------\n"
 
 sleep 3
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR" || exit 1
 
-echo "Копирование файлов конфигурации... \n"
+echo -e "Копирование файлов конфигурации...\n"
 
 cp ./bot-data/public-phrases.json ./bot-data/phrases.json
 cp ./bot-data/public-botinfo.md ./bot-data/botinfo.md
 touch ./bot-data/banned-users.json
-touch ./bot-data/personality.md
 
-# Надо наполнить персоналити мд каким-нибудь шаблоном хз
-# Да и в целом файлы пофиксить
+cat > ./bot-data/personality.md << 'EOF'
+# PiBot personality
 
-echo "Создание файлов с ключами... \n"
+Ты — дружелюбный и остроумный помощник в Telegram-чате.
+Отвечай кратко, с юмором, на русском языке.
+Твоя задача — поддерживать беседу и помогать участникам.
+EOF
 
-mkdir ./env/
-touch ./env/telegram-token ./env/groq-key ./env/dev-ids.json
+echo -e "Создание файлов с ключами...\n"
+
+mkdir -p ./env/
+touch ./env/telegram-token ./env/groq-key
+echo "[]" > ./env/dev-ids.json
 
 echo "YOUR-TELEGRAM-TOKEN" > ./env/telegram-token
 echo "YOUR-GROQ-API-KEY-HERE" > ./env/groq-key
 
-echo "------------------------------------------------ \n"
-echo "[WARNING]: Вставьте токен бота в env/telegram-token (получить у BotFather) \n"
-echo "[WARNING]: Вставьте API ключ в env/groq-key \n"
-echo "Вы можете настроить свои фразы в bot-data/phrases.json \n"
-echo "Отредактируйте info/botinfo.md чтобы изменить сообщение о боте \n"
-echo "------------------------------------------------ \n \n"
+echo -e "------------------------------------------------\n"
+echo -e "[WARNING]: Вставьте токен бота в env/telegram-token (получить у BotFather)\n"
+echo -e "[WARNING]: Вставьте API ключ в env/groq-key\n"
+echo -e "Вы можете настроить свои фразы в bot-data/phrases.json\n"
+echo -e "Отредактируйте bot-data/botinfo.md чтобы изменить сообщение о боте\n"
+echo -e "Отредактируйте bot-data/personality.md чтобы изменить поведение ИИ\n"
+echo -e "------------------------------------------------\n\n"
 
 sleep 3
 
 chmod +x ./launchbot.sh
 
-echo "Установка зависимостей... \n"
+echo -e "Установка зависимостей...\n"
 
 if [ ! -d .venv ]; then
     python3 -m venv .venv
 fi
 .venv/bin/pip install -r requirements.txt
 
-echo "------------------------------------------------ \n"
-echo "Установка завершена! Запустите бота: ./launchbot.sh \n"
-echo "------------------------------------------------"
+echo -e "------------------------------------------------\n"
+echo -e "Установка завершена! Запустите бота: ./launchbot.sh\n"
+echo -e "------------------------------------------------"

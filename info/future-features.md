@@ -6,11 +6,11 @@
 `[X]` --- done
 
 ## High priority
-1. Improve security
+1. Improve security [X]
 2. Remake phrase detection [X]
 3. Anit-raid [~]
 4. Anti-spambot
-5. Anti-spam [X]
+5. Anti-spam [~]
 6. Flagging new telegram users [-]
 
 

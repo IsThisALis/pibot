@@ -8,6 +8,16 @@ env/
 source/bot_data.pickle
 .mypy_cache/
 
+# Runtime data (contains chat/user data)
+source/bot_data.db
+bot_data.db
+
+# Log files
+important/logs/
+info/logs.log
+*.log
+
+# Sensitive project files
 isthisalis-home-adress.md
 sex-with-ramses666.mp4
 **/opencode-sessions/
@@ -17,6 +27,6 @@ bot-data/phrases.json
 bot-data/personality.md
 bot-data/banned-users.json
 
-info/botinfo.md
 source/pibot.py.BACKUP.txt
-info/documentation.json
+important/
+source/pibot-backup.py.md

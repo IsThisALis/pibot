@@ -1,0 +1,345 @@
+{
+  "project": {
+    "name": "PiBot",
+    "language": "Python 3.10+",
+    "framework": "python-telegram-bot v22+",
+    "main_file": "source/pibot.py",
+    "lines": 1119,
+    "llm_backend": "Groq (Llama 3.3 70B via OpenAI SDK)",
+    "persistence": {
+      "system": "SQLite",
+      "module": "source/persistence.py",
+      "class": "SQLitePersistence(BasePersistence)",
+      "serialization": "JSON with custom SetEncoder/object_hook for set/deque support",
+      "file": "source/bot_data.db"
+    }
+  },
+  "directory_structure": {
+    "bot-data": {
+      "description": "Runtime data loaded at startup",
+      "files": {
+        "phrases.json": "Trigger phrases and responses (dict[str, str])",
+        "public-phrases.json": "Template/sample phrases for setup",
+        "rp-phrases.json": "RP commands for reply messages (dict[str, str])",
+        "banned-users.json": "Set of blocked user IDs (int[])",
+        "personality.md": "System prompt for LLM",
+        "personality-public.md": "Public version of prompt",
+        "botinfo.md": "Bot info text for 'пибот био' command",
+        "changelog.md": "Changelog text for 'пибот обновы' command",
+        "public-botinfo.md": "Template botinfo for setup"
+      }
+    },
+    "env": {
+      "description": "Untracked config files (gitignored)",
+      "files": {
+        "telegram-token": "Bot token",
+        "groq-key": "Groq API key",
+        "dev-ids.json": "Developer IDs for elevated commands (int[])"
+      }
+    },
+    "info": {
+      "description": "Documentation and help files",
+      "files": {
+        "documentation.md": "Architecture documentation in Russian",
+        "documentation.json": "LLM-optimized documentation (this file)",
+        "command-list.md": "Command list for 'пибот команды'",
+        "full-changelog.md": "Full project changelog",
+        "future-features.md": "Planned features"
+      }
+    },
+    "important": {
+      "description": "Internal tooling (gitignored)",
+      "files": {
+        "logging_settings.py": "Custom logging with colorized console output, token censoring, file handler",
+        "code-review.md": "Code review notes",
+        "logs/": "Runtime log files"
+      }
+    },
+    "source": {
+      "pibot.py": "Main bot code (1119 lines, class PiBot)",
+      "persistence.py": "SQLite persistence implementation (172 lines)"
+    },
+    "config_files": {
+      "pyproject.toml": "mypy config",
+      "setup.sh": "Deployment script",
+      "launchbot.sh": "Launch script",
+      "requirements.txt": "Python dependencies"
+    }
+  },
+  "architecture": {
+    "class_based": true,
+    "main_class": "PiBot",
+    "initialization": {
+      "token": "Read from env/telegram-token",
+      "phrases": "Loaded from bot-data/phrases.json into self.phrases",
+      "rp_commands": "Loaded from bot-data/rp-phrases.json into self.rp_commands",
+      "dev_ids": "Loaded from env/dev-ids.json into self.dev_ids",
+      "llm": "Initialized via self._init_llm() — reads personality.md and groq-key",
+      "commands": "Registered in self._register_commands() — populates self.commands dict"
+    }
+  },
+  "message_processing_order": {
+    "1_pre_check": "Block banned users, filter old messages (>120s unless starts with 'пибот'). Implemented in PiBot._pre_check().",
+    "2_commands": "If text starts with 'пибот ', parse subcommand via PiBot._handle_command(). Dev_only commands check dev_ids; regular commands check rank against CommandConfig.value.",
+    "3_ignored_check": "If user is in trigger-spam timeout (ignored_until), drop message via is_user_ignored().",
+    "4_rp_commands": "If reply message and text matches key in rp-phrases.json, format and respond via PiBot._handle_rp().",
+    "5_trigger_phrases": "Exact match in phrases.json (supports __botinfo__, __changelog__, __commandlist__ via SPECIAL_RESPONSES dict). Handled by PiBot._handle_phrase().",
+    "6_chance_trigger": "Messages starting with 'пибот инфа' return random 0-100. Handled by PiBot._handle_chance().",
+    "7_ai_response": "If @bot_username mentioned, send chat context to Groq LLM via PiBot._handle_llm(). 60s timeout, retry up to 3x on 429/5xx with exponential backoff."
+  },
+  "command_system": {
+    "prefix": "пибот <subcommand>",
+    "registration": "self._register_commands() — populates self.commands dict[str, CommandConfig]",
+    "storage": "dict CommandConfig: dataclass with fields handler (Callable), value (int), dev_only (bool)",
+    "access_check": "If dev_only=True, only user in dev_ids can execute via PiBot.dev_ids. Else user_rank <= command.value."
+  },
+  "rank_system": {
+    "ranks": {
+      "1": {
+        "name": "Owner",
+        "description": "Chat creator (Telegram owner status)",
+        "immune_to": ["mute", "kick", "ban", "rank_change"],
+        "can_execute_values": [1, 2, 3, 4]
+      },
+      "2": {
+        "name": "Admin+",
+        "description": "Appointed by Owner via 'пибот ранг 2 для @user'",
+        "immune_to": ["mute", "kick", "ban"],
+        "can_execute_values": [2, 3, 4]
+      },
+      "3": {
+        "name": "Admin",
+        "description": "Default for all Telegram admins (ChatMemberStatus.ADMINISTRATOR)",
+        "immune_to": ["mute", "kick", "ban"],
+        "can_execute_values": [3, 4]
+      },
+      "4": {
+        "name": "Member",
+        "description": "Default for everyone else",
+        "immune_to": [],
+        "can_execute_values": [4]
+      }
+    },
+    "determination": "PiBot.get_user_rank(): 1) Check if Telegram owner (rank 1). 2) Check stored ranks in chat_data['ranks']. 3) Check if Telegram admin (rank 3). 4) Default rank 4.",
+    "storage": "context.chat_data['ranks'] (persisted via SQLitePersistence)",
+    "assignment_rules": "Cannot change Owner's rank. Cannot assign rank >= your own. Telegram admins cannot be set to rank 4; non-admins cannot be set to ranks 2 or 3."
+  },
+  "commands": {
+    "кинь": {
+      "aliases": ["выкинь"],
+      "value": 1,
+      "description": "Telegram ban user with revoke_messages=True + add to in-memory self.banned_users (synced to bot_data). Supports 'в гулаг' prefix or direct @user.",
+      "usage": "пибот кинь [в гулаг] @user",
+      "handler": "PiBot.handle_ban"
+    },
+    "верни": {
+      "value": 1,
+      "description": "Telegram unban user (only_if_banned=True) + remove from self.banned_users",
+      "usage": "пибот верни @user",
+      "handler": "PiBot.handle_unban"
+    },
+    "ранг": {
+      "value": 1,
+      "description": "Change user rank (n = 2, 3, 4). Cannot change Owner's rank, assign rank >= your own, or set admins to rank 4.",
+      "usage": "пибот ранг n для @user",
+      "handler": "PiBot.handle_rank"
+    },
+    "сотри": {
+      "value": 2,
+      "description": "Delete last n tracked messages from per-chat deque (thread-safe via asyncio.Lock). Continues on API errors, reports total deleted. Batches of 100.",
+      "usage": "пибот сотри n",
+      "handler": "PiBot.handle_nuke"
+    },
+    "кикни": {
+      "value": 2,
+      "description": "Kick user (ban + unban). Checks immunity via target_immune_to_mkb().",
+      "usage": "пибот кикни @user",
+      "handler": "PiBot.handle_kick"
+    },
+    "мут": {
+      "value": 3,
+      "description": "Mute user for n minutes (float, min 0.5). No n = indefinite mute. Checks immunity.",
+      "usage": "пибот мут @user [n]",
+      "handler": "PiBot.handle_mute"
+    },
+    "размут": {
+      "value": 3,
+      "description": "Unmute user. No immunity check — unmute bypasses target_immune_to_mkb.",
+      "usage": "пибот размут @user",
+      "handler": "PiBot.handle_unmute"
+    },
+    "био": {
+      "value": 4,
+      "description": "Show bot info from bot-data/botinfo.md",
+      "handler": "PiBot.handle_botinfo_cmd"
+    },
+    "обновы": {
+      "value": 4,
+      "description": "Show changelog from bot-data/changelog.md",
+      "handler": "PiBot.handle_changelog_cmd"
+    },
+    "команды": {
+      "value": 4,
+      "description": "Show command list from info/command-list.md",
+      "handler": "PiBot.handle_commands_cmd"
+    },
+    "ранги": {
+      "value": 4,
+      "description": "List users with ranks 2 (Admin+) and 3 (Admin)",
+      "handler": "PiBot.handle_rank_list"
+    },
+    "заблокируй": {
+      "value": 0,
+      "dev_only": true,
+      "description": "Add user ID to self.banned_users (synced to bot_data). No Telegram interaction. Only for dev_ids.",
+      "usage": "пибот заблокируй <id> or @username",
+      "handler": "PiBot.handle_block"
+    }
+  },
+  "dev_id_system": {
+    "file": "env/dev-ids.json",
+    "purpose": "Elevated access for /пибот заблокируй command only",
+    "format": "int[]",
+    "check": "If subcommand has dev_only=True and user_id in self.dev_ids (in-memory set loaded at startup), execute. No rank fallback."
+  },
+  "banned_users_system": {
+    "storage": "In-memory set self.banned_users, initialized from bot_data['banned_users'] in post_init",
+    "sync": "self.banned_users.add/discard followed by context.bot_data['banned_users'] = list(self.banned_users)",
+    "check": "Banned users are blocked at _pre_check() and track_all_messages() — no triggers, RP, commands, or AI",
+    "modification": {
+      "кинь/выкинь": "adds target to self.banned_users + Telegram ban with revoke_messages=True",
+      "верни": "removes target from self.banned_users + Telegram unban with only_if_banned=True",
+      "заблокируй": "adds target to self.banned_users without Telegram interaction (dev_only)"
+    }
+  },
+  "rate_limiting": {
+    "global": {
+      "algorithm": "Sliding window with asyncio.Lock",
+      "rate": "5 calls/second",
+      "effect": "Message dropped if limit exceeded"
+    },
+    "llm": {
+      "algorithm": "Sliding window per chat_id with asyncio.Lock",
+      "rate": "3 calls/60 seconds per chat",
+      "storage": "dict self.llm_rate_limiters[chat_id], cleaned hourly via self._cleanup_caches job"
+    },
+    "trigger_spam": {
+      "window": "60 seconds",
+      "limit": "5 identical trigger phrases",
+      "penalty": "User ignored for 120 seconds, bot responds 'Ой всё' via is_user_ignored()"
+    },
+    "telegram_mute": {
+      "trigger": ">5 messages in 1 second (non-trigger, non-RP messages only)",
+      "warning": "6-9 messages: single warning message (tracked via spam_warned per user)",
+      "action": ">9 messages: restrictChatMember with NO_PERMISSIONS for 60 seconds",
+      "exempt_ranks": [1, 2, 3]
+    }
+  },
+  "age_filter": {
+    "max_age": "120 seconds",
+    "exception": "Messages starting with 'пибот' prefix bypass the age filter"
+  },
+  "rp_system": {
+    "file": "bot-data/rp-phrases.json",
+    "trigger": "Reply to a message with exact text matching a key (no prefix required)",
+    "template_vars": {
+      "{mention1}": "Author of the reply message",
+      "{mention2}": "Target of the reply message"
+    },
+    "example": "User A replies to B with 'обнять' → bot responds: 'A нежно обнял B'"
+  },
+  "ai_system": {
+    "backend": "Groq",
+    "model": "llama-3.3-70b-versatile",
+    "api": "OpenAI-compatible SDK (AsyncOpenAI)",
+    "personality_file": "bot-data/personality.md",
+    "trigger": "Reply to any message with @bot_username mention, or any message in private chat",
+    "context": "Last 20 messages from chat_data['llm_history'] (trimmed at startup in post_init)",
+    "max_tokens": 300,
+    "temperature": 0.9,
+    "timeout_seconds": 60,
+    "retry": "3 attempts with exponential backoff (1s, 2s, 4s) on HTTP 429, 500, 502, 503, 504"
+  },
+  "typing": {
+    "tool": "mypy",
+    "config": "pyproject.toml",
+    "disallow_untyped_defs": true,
+    "suppressed": ["ignore_missing_imports"],
+    "reason": "PTB types many attributes as Optional; code handles None at runtime"
+  },
+  "key_global_variables": {
+    "MAX_TRACKED_MESSAGES": 1000,
+    "DELETE_BATCH_SIZE": 100,
+    "MAX_MESSAGE_AGE": 120,
+    "TRIGGER_SPAM_WINDOW": 60,
+    "TRIGGER_SPAM_LIMIT": 5,
+    "TRIGGER_SPAM_MUTE": 120,
+    "LLM_HISTORY_LIMIT": 20,
+    "ANTISPAM_WINDOW": 1.0,
+    "ANTISPAM_MSG_LIMIT": 5,
+    "ANTISPAM_MUTE_THRESHOLD": 9,
+    "ANTISPAM_MUTE_DURATION": 60,
+    "PIBOT_PREFIX": "пибот ",
+    "CHANCE_TRIGGER": "пибот инфа"
+  },
+  "key_constants": {
+    "RANK_OWNER": 1,
+    "RANK_ADMIN_PLUS": 2,
+    "RANK_ADMIN": 3,
+    "RANK_MEMBER": 4
+  },
+  "function_index": {
+    "message_processing": {
+      "PiBot.handle_message": "Main dispatcher: calls _pre_check, _handle_command, _handle_rp, _handle_phrase, _handle_chance, _handle_llm in order.",
+      "PiBot._pre_check": "Banned user check, age filter. Returns False to drop message silently.",
+      "PiBot._handle_command": "Parse 'пибот ' prefix, lookup CommandConfig in self.commands, check dev_only or rank, execute handler.",
+      "PiBot._handle_rp": "Reply message + key in self.rp_commands → format {mention1}/{mention2} and respond.",
+      "PiBot._handle_phrase": "Key in self.phrases → respond. Supports SPECIAL_RESPONSES for __botinfo__/__changelog__/__commandlist__.",
+      "PiBot._handle_chance": "Starts with CHANCE_TRIGGER → random integer 0-100.",
+      "PiBot._handle_llm": "@mention detection, per-chat LLM rate limit, build history, call ask_llm with retry logic.",
+      "PiBot.track_all_messages": "Group -1 handler. Tracks message IDs in deque, username_map for @resolution, spam detection with progressive warning/mute.",
+      "PiBot.safe_reply": "Reply with error handling + message ID tracking via track_id.",
+      "PiBot.track_id": "Append message ID to per-chat deque with MAX_TRACKED_MESSAGES limit, thread-safe via per-chat asyncio.Lock."
+    },
+    "rank_system": {
+      "PiBot.get_user_rank": "Determine user's rank (1-4): check Telegram owner → stored ranks → Telegram admin → fallback to 4.",
+      "PiBot.target_immune_to_mkb": "Check if target has rank <= RANK_ADMIN (immune to mute/kick/ban)."
+    },
+    "command_handlers": {
+      "PiBot.handle_nuke": "пибот сотри n — delete n messages with batch processing, thread-safe",
+      "PiBot.handle_kick": "пибот кикни @user — ban then unban",
+      "PiBot.handle_ban": "пибот кинь [в гулаг] @user — accepts both syntaxes with _strip_gulag_prefix",
+      "PiBot.handle_unban": "пибот верни @user",
+      "PiBot.handle_mute": "пибот мут @user [n] — parse optional duration suffix",
+      "PiBot.handle_unmute": "пибот размут @user — bypasses immunity check",
+      "PiBot.handle_rank": "пибот ранг n для @user — prevents privilege escalation, validates Telegram admin status",
+      "PiBot.handle_block": "пибот заблокируй <id|@user> — dev_only, no Telegram interaction",
+      "PiBot.handle_botinfo_cmd": "пибот био — reads bot-data/botinfo.md async",
+      "PiBot.handle_changelog_cmd": "пибот обновы — reads bot-data/changelog.md async",
+      "PiBot.handle_commands_cmd": "пибот команды — reads info/command-list.md async",
+      "PiBot.handle_rank_list": "пибот ранги — lists users with ranks 2 and 3"
+    },
+    "persistence": {
+      "SQLitePersistence": "PTB BasePersistence subclass. JSON serialization with SetEncoder. Stores in bot_data.db.",
+      "SetEncoder": "json.JSONEncoder subclass: converts set to {'__type__': 'set', '__items__': list} and deque similarly.",
+      "_object_hook": "json.loads object_hook: reconstructs set and deque from their serialized forms."
+    },
+    "utilities": {
+      "load_phrases": "Load bot-data/phrases.json into dict[str, str]",
+      "load_rp_commands": "Load bot-data/rp-phrases.json into dict[str, str]",
+      "load_dev_ids": "Load env/dev-ids.json into set[int]",
+      "get_mention": "Format @username or fallback to first_name",
+      "_get_msg_lock": "Returns per-chat asyncio.Lock for safe deque access",
+      "_get_llm_rate_limiter": "Returns per-chat RateLimiter (3 calls/60s) for LLM",
+      "_cleanup_caches": "Hourly job: remove stale entries from self.msg_locks and self.llm_rate_limiters",
+      "_resolve_by_username": "Helper: lookup username in username_map, return User or None",
+      "_strip_gulag_prefix": "Helper: strip 'в гулаг ' or 'вгулаг ' prefix, return remaining string or None",
+      "_strip_gulag_prefix": "Helper: strip 'в гулаг ' or 'вгулаг ' prefix from params for handle_ban",
+      "resolve_user": "Resolve @username, text mention, or reply target to User object",
+      "is_user_ignored": "Check if user is in trigger-spam timeout period",
+      "track_trigger_spam": "Track trigger phrase frequency with sliding window, return True if limit exceeded",
+      "ask_llm": "Call Groq with system prompt + history. 60s timeout, 3 retries on 429/5xx with exponential backoff.",
+      "_read_text_file_async": "Generic async text file reader for botinfo/changelog/commandlist"
+    }
+  }
+}
